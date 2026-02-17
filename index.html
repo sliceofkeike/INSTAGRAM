@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Swipeable IG Feed</title>
+    <title>Zoom + Move IG Feed</title>
     <style>
+        :root { --heart-pink: #F2B8D8; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -12,13 +14,8 @@
         }
 
         .feed-frame {
-            position: relative;
-            width: 90vw;
-            max-width: 400px;
-            background: #000;
-            border-radius: 12px;
-            overflow: hidden;
-            touch-action: pan-y; /* Allows vertical scrolling but captures horizontal swipes */
+            position: relative; width: 90vw; max-width: 400px;
+            background: #000; border-radius: 12px; overflow: hidden; touch-action: none;
         }
 
         /* Ratios */
@@ -27,122 +24,173 @@
         .ratio-portrait { aspect-ratio: 4 / 5; }
 
         .slide {
-            width: 100%; height: 100%;
-            object-fit: cover;
-            display: none;
+            width: 100%; height: 100%; object-fit: cover;
+            display: none; transition: transform 0.1s ease-out;
+            transform-origin: center;
         }
         .slide.active { display: block; }
+        .draggable { cursor: move !important; }
 
-        /* Minimalist Arrows */
+        /* Heart Menu */
+        .heart-container {
+            position: absolute; bottom: 15px; left: 15px;
+            z-index: 100; opacity: 0; transition: opacity 0.3s;
+        }
+        .feed-frame:hover .heart-container { opacity: 1; }
+
+        .heart-icon {
+            font-size: 24px; color: var(--heart-pink);
+            cursor: pointer; filter: drop-shadow(0 0 5px rgba(0,0,0,0.3));
+        }
+
+        .menu-popup {
+            position: absolute; bottom: 35px; left: 0;
+            background: white; border-radius: 10px;
+            padding: 12px; display: none; flex-direction: column;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); min-width: 160px; gap: 8px;
+        }
+        .heart-container:hover .menu-popup { display: flex; }
+
+        .menu-popup button {
+            background: none; border: none; padding: 6px;
+            text-align: left; cursor: pointer; font-size: 13px;
+            color: #333; border-radius: 5px;
+        }
+        .menu-popup button:hover { background: #fdf0f6; color: var(--heart-pink); }
+
+        /* Zoom Slider */
+        .zoom-label { font-size: 11px; font-weight: bold; color: var(--heart-pink); margin-top: 5px; }
+        input[type=range] { width: 100%; accent-color: var(--heart-pink); cursor: pointer; }
+
+        /* Nav */
         .nav-arrow {
             position: absolute; top: 50%; transform: translateY(-50%);
-            background: rgba(255, 255, 255, 0.4); 
-            border: none; color: white;
-            width: 35px; height: 35px; border-radius: 50%;
-            cursor: pointer; font-size: 18px; z-index: 10;
-            opacity: 0; transition: opacity 0.3s ease;
-            display: flex; align-items: center; justify-content: center;
+            background: rgba(255, 255, 255, 0.3); border: none;
+            color: white; width: 32px; height: 32px; border-radius: 50%;
+            cursor: pointer; z-index: 10; opacity: 0; transition: 0.3s;
         }
-
-        /* Show arrows only on hover/active tap */
-        .feed-frame:hover .nav-arrow, 
-        .feed-frame:active .nav-arrow { opacity: 1; }
-
-        .prev { left: 10px; }
-        .next { right: 10px; }
+        .feed-frame:hover .nav-arrow { opacity: 1; }
+        .prev { left: 10px; } .next { right: 10px; }
+        .dots { position: absolute; bottom: 10px; width: 100%; display: flex; justify-content: center; gap: 5px; }
+        .dot { width: 5px; height: 5px; background: rgba(255,255,255,0.4); border-radius: 50%; }
+        .dot.active { background: white; }
         .hidden { display: none !important; }
-
-        /* Pagination Dots (Optional extra touch) */
-        .dots-container {
-            position: absolute; bottom: 10px; width: 100%;
-            display: flex; justify-content: center; gap: 5px; z-index: 10;
-        }
-        .dot { width: 6px; height: 6px; background: rgba(255,255,255,0.5); border-radius: 50%; }
-        .dot.active { background: #fff; }
     </style>
 </head>
 <body>
 
     <script>
-        /* ---------------------------------------------------
-           MASTER CONFIG: EDIT YOUR IMAGES HERE
-           --------------------------------------------------- */
         const CONFIG = {
-            style: 'portrait', // 'square', 'landscape', or 'portrait'
+            defaultStyle: 'portrait', 
             pages: [
-                "https://i.pinimg.com/736x/25/8f/d5/258fd5da387d702209e594354cf1bb21.jpg", // P1
-                "https://i.pinimg.com/736x/c6/81/b2/c681b200b59ec6a9f7271e18500a81ed.jpg", // P2
-                "https://i.pinimg.com/736x/4a/20/cc/4a20ccf3b55074e432aefc9594e130c4.jpg", // P3
-                "", // P4
-                "", // P5
-                "", // P6
-                "", // P7
-                "", // P8
-                "", // P9
-                ""  // P10
+                "https://i.pinimg.com/1200x/52/b7/43/52b7438d0ba4941d9c2d157e6ee6108d.jpg",
+                "https://i.pinimg.com/1200x/52/b7/43/52b7438d0ba4941d9c2d157e6ee6108d.jpg",
+                "", "", "", "", "", "", "", ""
             ]
         };
     </script>
 
     <div id="feed-container" class="feed-frame">
         <div id="slides-wrapper" style="width:100%; height:100%;"></div>
-        
-        <button id="l-arrow" class="nav-arrow prev" onclick="changeSlide(-1)">❮</button>
-        <button id="r-arrow" class="nav-arrow next" onclick="changeSlide(1)">❯</button>
-        
-        <div id="dots" class="dots-container"></div>
+
+        <div class="heart-container">
+            <div class="heart-icon">♥</div>
+            <div class="menu-popup">
+                <button onclick="setRatio('landscape')">Landscape</button>
+                <button onclick="setRatio('square')">4 x 4 Ratio</button>
+                <button onclick="setRatio('portrait')">Original Frame</button>
+                <hr style="border:0; border-top:1px solid #eee; width:100%">
+                <button onclick="toggleMove()" id="move-btn">Move Mode: OFF</button>
+                <div class="zoom-label">ZOOM LEVEL</div>
+                <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1" oninput="updateZoom(this.value)">
+            </div>
+        </div>
+
+        <button class="nav-arrow prev" onclick="changeSlide(-1)">❮</button>
+        <button class="nav-arrow next" onclick="changeSlide(1)">❯</button>
+        <div id="dots-container" class="dots"></div>
     </div>
 
     <script>
         let currentIndex = 0;
         let validImages = [];
-        let touchStartX = 0;
-        let touchEndX = 0;
+        let canDrag = false;
+        let positions = []; // Array to store {x, y, zoom} for each slide
 
         window.onload = () => {
             const frame = document.getElementById('feed-container');
             const wrapper = document.getElementById('slides-wrapper');
-            const dots = document.getElementById('dots');
-            
-            frame.classList.add(`ratio-${CONFIG.style}`);
+            const dots = document.getElementById('dots-container');
+
+            frame.classList.add(`ratio-${CONFIG.defaultStyle}`);
             validImages = CONFIG.pages.filter(url => url.trim() !== "");
 
             validImages.forEach((url, idx) => {
-                // Create Slide
+                positions.push({ x: 50, y: 50, zoom: 1 });
+
                 let img = document.createElement('img');
                 img.src = url;
                 img.className = `slide ${idx === 0 ? 'active' : ''}`;
+                img.draggable = false;
+                
+                let isMoving = false;
+                let startX, startY;
+
+                const start = (e) => {
+                    if(!canDrag) return;
+                    isMoving = true;
+                    startX = (e.pageX || e.touches[0].pageX);
+                    startY = (e.pageY || e.touches[0].pageY);
+                };
+
+                const move = (e) => {
+                    if(!isMoving || !canDrag) return;
+                    const x = (e.pageX || e.touches[0].pageX);
+                    const y = (e.pageY || e.touches[0].pageY);
+                    
+                    positions[idx].x += (startX - x) / 5;
+                    positions[idx].y += (startY - y) / 5;
+                    positions[idx].x = Math.max(0, Math.min(100, positions[idx].x));
+                    positions[idx].y = Math.max(0, Math.min(100, positions[idx].y));
+
+                    img.style.objectPosition = `${positions[idx].x}% ${positions[idx].y}%`;
+                    startX = x; startY = y;
+                };
+
+                const end = () => isMoving = false;
+
+                img.onmousedown = start; img.ontouchstart = start;
+                window.addEventListener('mousemove', move);
+                window.addEventListener('touchmove', move);
+                window.addEventListener('mouseup', end);
+                window.addEventListener('touchend', end);
+
                 wrapper.appendChild(img);
-
-                // Create Dot
-                let dot = document.createElement('div');
-                dot.className = `dot ${idx === 0 ? 'active' : ''}`;
-                dots.appendChild(dot);
-            });
-
-            if (validImages.length <= 1) {
-                document.querySelectorAll('.nav-arrow').forEach(a => a.classList.add('hidden'));
-                dots.classList.add('hidden');
-            }
-
-            // Mobile Swipe Logic
-            frame.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
-            frame.addEventListener('touchend', e => { 
-                touchEndX = e.changedTouches[0].screenX;
-                handleSwipe();
+                let d = document.createElement('div');
+                d.className = `dot ${idx === 0 ? 'active' : ''}`;
+                dots.appendChild(d);
             });
         };
 
-        function handleSwipe() {
-            const threshold = 50; // pixels swiped to trigger
-            if (touchStartX - touchEndX > threshold) changeSlide(1);  // Swiped Left
-            if (touchEndX - touchStartX > threshold) changeSlide(-1); // Swiped Right
+        function setRatio(type) { document.getElementById('feed-container').className = `feed-frame ratio-${type}`; }
+
+        function toggleMove() {
+            canDrag = !canDrag;
+            document.getElementById('move-btn').innerText = `Move Mode: ${canDrag ? 'ON' : 'OFF'}`;
+            document.querySelectorAll('.slide').forEach(s => s.classList.toggle('draggable', canDrag));
+        }
+
+        function updateZoom(val) {
+            positions[currentIndex].zoom = val;
+            const slides = document.querySelectorAll('.slide');
+            slides[currentIndex].style.transform = `scale(${val})`;
         }
 
         function changeSlide(n) {
             const slides = document.querySelectorAll('.slide');
             const dots = document.querySelectorAll('.dot');
-            
+            const slider = document.getElementById('zoom-slider');
+
             slides[currentIndex].classList.remove('active');
             dots[currentIndex].classList.remove('active');
             
@@ -150,6 +198,9 @@
             
             slides[currentIndex].classList.add('active');
             dots[currentIndex].classList.add('active');
+            
+            // Match the slider to the current slide's zoom
+            slider.value = positions[currentIndex].zoom;
         }
     </script>
 </body>
